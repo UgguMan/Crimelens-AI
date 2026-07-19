@@ -6,7 +6,10 @@
 import Cookies from 'js-cookie';
 import type { APIResponse } from './types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
+let API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
+if (API_BASE.startsWith('http') && !API_BASE.endsWith('/api') && !API_BASE.includes('/api/')) {
+  API_BASE = API_BASE.replace(/\/$/, '') + '/api';
+}
 
 /**
  * Get the stored JWT token from cookies.
