@@ -31,18 +31,23 @@ function LoginForm() {
     script.defer = true;
     document.body.appendChild(script);
 
-    script.onload = () => {
-      if ((window as any).google) {
+    const initializeGoogle = () => {
+      const btn = document.getElementById('google-signin-btn');
+      if (btn && (window as any).google) {
         (window as any).google.accounts.id.initialize({
           client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '', 
           callback: handleGoogleResponse,
         });
         (window as any).google.accounts.id.renderButton(
-          document.getElementById('google-signin-btn'),
+          btn,
           { theme: 'filled_black', size: 'large', width: 316 }
         );
+      } else {
+        setTimeout(initializeGoogle, 100);
       }
     };
+
+    script.onload = initializeGoogle;
 
     return () => {
       try {
