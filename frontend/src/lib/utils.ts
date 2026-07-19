@@ -64,8 +64,10 @@ export function getRiskLabel(score: number): string {
  * Get user initials from full name.
  */
 export function getInitials(name: string): string {
-  return name
-    .split(' ')
+  if (!name || typeof name !== 'string') return 'U';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 0 || !parts[0]) return 'U';
+  return parts
     .map((n) => n[0])
     .join('')
     .toUpperCase()

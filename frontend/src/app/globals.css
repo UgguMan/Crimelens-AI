@@ -8,18 +8,18 @@
 
 /* ── CSS Custom Properties (Design Tokens) ───────────────── */
 :root {
-  /* Background Layers */
-  --bg-primary: #000000;
-  --bg-secondary: #09090b;
-  --bg-tertiary: #18181b;
-  --bg-surface: #09090b;
-  --bg-elevated: #18181b;
-  --bg-hover: #1c1c1f;
+  /* Background Layers (Light Mode) */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9f9fb;
+  --bg-tertiary: #f3f3f6;
+  --bg-surface: #f9f9fb;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f4f4f5;
 
   /* Accent Colors */
-  --accent-primary: #ffffff;
-  --accent-secondary: #a1a1aa;
-  --accent-tertiary: #27272a;
+  --accent-primary: #000000;
+  --accent-secondary: #52525b;
+  --accent-tertiary: #e4e4e7;
   
   /* Status Colors (Subtle & Flat) */
   --color-success: #10b981;
@@ -32,31 +32,31 @@
   --color-info-bg: rgba(59, 130, 246, 0.08);
 
   /* Risk Colors */
-  --risk-low: #52525b;
-  --risk-medium: #a1a1aa;
-  --risk-high: #f4f4f5;
-  --risk-critical: #ffffff;
+  --risk-low: #71717a;
+  --risk-medium: #52525b;
+  --risk-high: #18181b;
+  --risk-critical: #000000;
 
   /* Text Colors */
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
-  --text-accent: #ffffff;
-  --text-on-accent: #000000;
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --text-accent: #000000;
+  --text-on-accent: #ffffff;
 
   /* Borders */
-  --border-default: #27272a;
-  --border-hover: #3f3f46;
-  --border-active: #ffffff;
+  --border-default: #e4e4e7;
+  --border-hover: #d4d4d8;
+  --border-active: #000000;
   --border-radius-sm: 4px;
   --border-radius-md: 6px;
   --border-radius-lg: 8px;
   --border-radius-xl: 12px;
 
   /* Shadows (Subtle Flat Shadows) */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
   --shadow-glow: none;
   --shadow-glow-strong: none;
 
@@ -92,6 +92,46 @@
   --transition-fast: 100ms ease;
   --transition-base: 200ms ease;
   --transition-slow: 300ms ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Background Layers (Dark Mode Override) */
+    --bg-primary: #000000;
+    --bg-secondary: #09090b;
+    --bg-tertiary: #18181b;
+    --bg-surface: #09090b;
+    --bg-elevated: #18181b;
+    --bg-hover: #1c1c1f;
+
+    /* Accent Colors */
+    --accent-primary: #ffffff;
+    --accent-secondary: #a1a1aa;
+    --accent-tertiary: #27272a;
+
+    /* Risk Colors */
+    --risk-low: #52525b;
+    --risk-medium: #a1a1aa;
+    --risk-high: #f4f4f5;
+    --risk-critical: #ffffff;
+
+    /* Text Colors */
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --text-muted: #52525b;
+    --text-accent: #ffffff;
+    --text-on-accent: #000000;
+
+    /* Borders */
+    --border-default: #27272a;
+    --border-hover: #3f3f46;
+    --border-active: #ffffff;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  }
 }
 
 /* ── Global Reset ────────────────────────────────────────── */

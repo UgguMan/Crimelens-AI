@@ -23,9 +23,6 @@ export default function Topbar() {
         <button className="topbar-icon-btn" title="Notifications">
           <Bell size={20} />
         </button>
-        <button className="topbar-icon-btn" title="Settings">
-          <Settings size={20} />
-        </button>
         {user && (
           <div className="user-avatar" title={user.full_name}>
             {getInitials(user.full_name)}
