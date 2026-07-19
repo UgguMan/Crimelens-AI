@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # --- Google Gemini API ---
     gemini_api_key: str = Field(default="", description="Google Gemini API key")
 
+    # --- Google Authentication (OAuth) ---
+    google_client_id: str = Field(default="", description="Google OAuth2 Client ID")
+
     # --- File Upload ---
     upload_dir: str = Field(default="uploads", description="Directory for uploaded evidence files")
     export_dir: str = Field(default="exports", description="Directory for generated PDF reports")
@@ -47,7 +50,7 @@ class Settings(BaseSettings):
 
     # --- CORS ---
     cors_origins: str = Field(
-        default="http://localhost:3000",
+        default="http://localhost:3000,https://*.vercel.app",
         description="Comma-separated list of allowed CORS origins",
     )
 

@@ -4,7 +4,7 @@
    Premium auth page with glass card and animated background.
    ============================================================ */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -16,8 +16,50 @@ function LoginForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const router = useRouter();
+
+  // Load Google Identity Services SDK dynamically
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    document.body.appendChild(script);
+
+    script.onload = () => {
+      if ((window as any).google) {
+        (window as any).google.accounts.id.initialize({
+          // Replace with real client ID or load from config (defaults to a generic sandbox client id if empty)
+          client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '', 
+          callback: handleGoogleResponse,
+        });
+        (window as any).google.accounts.id.renderButton(
+          document.getElementById('google-signin-btn'),
+          { theme: 'filled_black', size: 'large', width: 316 }
+        );
+      }
+    };
+
+    return () => {
+      try {
+        document.body.removeChild(script);
+      } catch (e) {}
+    };
+  }, []);
+
+  const handleGoogleResponse = async (response: any) => {
+    setError('');
+    setLoading(true);
+    try {
+      await loginWithGoogle(response.credential);
+      router.push('/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Google sign-in failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,8 +173,19 @@ function LoginForm() {
               <>Sign In <ArrowRight size={18} /></>
             )}
           </button>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </form>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 'var(--space-3)', margin: 'var(--space-4) 0',
+          fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)'
+        }}>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border-default)' }} />
+          <span>OR</span>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border-default)' }} />
+        </div>
+
+        <div id="google-signin-btn" style={{ display: 'flex', justifyContent: 'center', minHeight: '40px' }} />
 
         <div className="auth-footer">
           Don&apos;t have an account?{' '}

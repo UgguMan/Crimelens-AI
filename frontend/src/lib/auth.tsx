@@ -15,6 +15,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
+  loginWithGoogle: (token: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -56,6 +57,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(userData);
   }, []);
 
+  const loginWithGoogle = useCallback(async (token: string) => {
+    const res: any = await authAPI.googleLogin(token);
+    const { access_token, user: userData } = res.data;
+    Cookies.set(TOKEN_KEY, access_token, { expires: 1, sameSite: 'strict' });
+    setUser(userData);
+  }, []);
+
   const logout = useCallback(() => {
     Cookies.remove(TOKEN_KEY);
     setUser(null);
@@ -70,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         register,
+        loginWithGoogle,
         logout,
       }}
     >

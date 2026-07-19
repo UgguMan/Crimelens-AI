@@ -55,6 +55,33 @@ async def login(data: UserLogin, request: Request):
     return {"success": True, "data": result}
 
 
+from pydantic import BaseModel
+
+class GoogleLoginRequest(BaseModel):
+    token: str
+
+
+@router.post("/google")
+async def google_login(data: GoogleLoginRequest, request: Request):
+    """
+    Authenticate with Google OAuth ID Token.
+    Returns JWT access token and user profile.
+    """
+    result = await auth_service.google_login(data.token)
+
+    # Log the login
+    await log_service.log_action(
+        user_id=result["user"]["_id"],
+        action="user.logged_in",
+        resource_type="user",
+        resource_id=result["user"]["_id"],
+        details={"method": "google"},
+        ip_address=request.client.host if request.client else "",
+    )
+
+    return {"success": True, "data": result}
+
+
 @router.get("/me")
 async def get_profile(current_user: dict = Depends(get_current_user)):
     """Get the authenticated user's profile."""

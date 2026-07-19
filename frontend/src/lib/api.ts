@@ -6,7 +6,7 @@
 import Cookies from 'js-cookie';
 import type { APIResponse } from './types';
 
-const API_BASE = '/api';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 /**
  * Get the stored JWT token from cookies.
@@ -70,6 +70,12 @@ export const authAPI = {
     }),
 
   getProfile: () => request('/auth/me'),
+  googleLogin: (token: string) =>
+    request('/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }),
 };
 
 /* ── Cases API ─────────────────────────────────────────────── */
