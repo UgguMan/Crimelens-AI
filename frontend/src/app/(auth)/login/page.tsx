@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Crosshair, Mail, Lock, ArrowRight } from 'lucide-react';
 import { AuthProvider, useAuth } from '@/lib/auth';
+import { authAPI } from '@/lib/api';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
@@ -19,11 +20,25 @@ function LoginForm() {
   const { login, loginWithGoogle } = useAuth();
   const router = useRouter();
 
-  const hasGoogleClientId = !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  // Load Google Client ID from env or dynamic API config fallback
+  const [googleClientId, setGoogleClientId] = useState('');
 
-  // Load Google Identity Services SDK dynamically
+  // 1. Fetch backend config on mount to retrieve Google Client ID dynamically
   useEffect(() => {
-    if (!hasGoogleClientId) return;
+    authAPI.getConfig()
+      .then((res: any) => {
+        if (res?.success && res.data?.google_client_id) {
+          setGoogleClientId(res.data.google_client_id);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load dynamic backend auth config:', err);
+      });
+  }, []);
+
+  // 2. Load Google Identity Services SDK dynamically when Client ID is available
+  useEffect(() => {
+    if (!googleClientId) return;
 
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
@@ -35,7 +50,7 @@ function LoginForm() {
       const btn = document.getElementById('google-signin-btn');
       if (btn && (window as any).google) {
         (window as any).google.accounts.id.initialize({
-          client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '', 
+          client_id: googleClientId, 
           callback: handleGoogleResponse,
         });
         (window as any).google.accounts.id.renderButton(
@@ -54,7 +69,7 @@ function LoginForm() {
         document.body.removeChild(script);
       } catch (e) {}
     };
-  }, [hasGoogleClientId]);
+  }, [googleClientId]);
 
   const handleGoogleResponse = async (response: any) => {
     setError('');
@@ -206,7 +221,7 @@ function LoginForm() {
           <div style={{ flex: 1, height: '1px', background: 'var(--border-default)' }} />
         </div>
 
-        {hasGoogleClientId ? (
+        {googleClientId ? (
           <div id="google-signin-btn" style={{ display: 'flex', justifyContent: 'center', minHeight: '40px' }} />
         ) : (
           <button

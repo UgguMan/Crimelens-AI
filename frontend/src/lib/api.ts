@@ -79,6 +79,7 @@ export const authAPI = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
     }),
+  getConfig: () => request('/auth/config'),
 };
 
 /* ── Cases API ─────────────────────────────────────────────── */

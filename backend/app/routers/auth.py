@@ -87,3 +87,16 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
     """Get the authenticated user's profile."""
     profile = await auth_service.get_profile(current_user["user_id"])
     return {"success": True, "data": profile}
+
+
+@router.get("/config")
+async def get_auth_config():
+    """Retrieve public authentication configurations (like Google Client ID)."""
+    from app.config import get_settings
+    settings = get_settings()
+    return {
+        "success": True,
+        "data": {
+            "google_client_id": settings.google_client_id
+        }
+    }
