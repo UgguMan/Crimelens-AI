@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     """
 
     # --- Application ---
-    app_name: str = Field(default="CrimeLens AI", description="Application display name")
+    app_name: str = Field(default="CID", description="Application display name")
     app_version: str = Field(default="1.0.0", description="Semantic version")
     debug: bool = Field(default=False, description="Enable debug mode")
 

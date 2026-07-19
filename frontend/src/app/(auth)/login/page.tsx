@@ -112,7 +112,7 @@ function LoginForm() {
         </motion.div>
 
         <h1 className="auth-title">Welcome Back</h1>
-        <p className="auth-subtitle">Sign in to CrimeLens AI platform</p>
+        <p className="auth-subtitle">Sign in to CID platform</p>
 
         {error && (
           <motion.div

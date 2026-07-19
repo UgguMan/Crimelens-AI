@@ -42,9 +42,9 @@ export default function Sidebar() {
           <Crosshair size={22} color="#06080f" />
         </div>
         <div>
-          <div className="sidebar-logo-text">CrimeLens</div>
+          <div className="sidebar-logo-text">CID</div>
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', fontWeight: 500 }}>
-            AI Forensics
+            Forensic Unit
           </div>
         </div>
       </div>

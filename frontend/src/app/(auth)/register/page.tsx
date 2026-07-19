@@ -63,7 +63,7 @@ function RegisterForm() {
         </motion.div>
 
         <h1 className="auth-title">Create Account</h1>
-        <p className="auth-subtitle">Join the CrimeLens AI investigation platform</p>
+        <p className="auth-subtitle">Join the CID investigation platform</p>
 
         {error && (
           <motion.div
