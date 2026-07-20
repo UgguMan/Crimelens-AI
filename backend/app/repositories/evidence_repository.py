@@ -78,12 +78,14 @@ class OCRResultRepository(BaseRepository):
         evidence_cursor = self.collection.database.evidence.find(
             {"case_id": case_id}, {"_id": 1}
         )
+        # evidence_id in ocr_results is stored as a STRING (str(ObjectId)),
+        # so we must convert the ObjectIds to strings for the $in match
         evidence_ids = [str(doc["_id"]) async for doc in evidence_cursor]
 
         if not evidence_ids:
             return ""
 
-        # Get all OCR results for those evidence IDs
+        # Get all OCR results for those evidence IDs (matching string evidence_ids)
         ocr_cursor = self.collection.find(
             {"evidence_id": {"$in": evidence_ids}},
             {"full_text": 1, "evidence_id": 1},
@@ -91,8 +93,9 @@ class OCRResultRepository(BaseRepository):
 
         texts = []
         async for doc in ocr_cursor:
-            if doc.get("full_text"):
-                texts.append(f"--- Evidence: {doc['evidence_id']} ---\n{doc['full_text']}")
+            full_text = doc.get("full_text", "")
+            if full_text and full_text.strip():
+                texts.append(f"--- Evidence: {doc['evidence_id']} ---\n{full_text}")
 
         return "\n\n".join(texts)
 

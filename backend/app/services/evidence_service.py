@@ -101,7 +101,7 @@ class EvidenceService:
         # --- Run OCR Pipeline ---
         await self.evidence_repo.update_ocr_status(evidence_id, ProcessingStatus.PROCESSING.value)
         try:
-            ocr_result = process_evidence(str(file_path), file_type, evidence_id)
+            ocr_result = await process_evidence(str(file_path), file_type, evidence_id)
             ocr_doc = ocr_result.model_dump()
             await self.ocr_repo.create(ocr_doc)
             await self.evidence_repo.update_ocr_status(evidence_id, ProcessingStatus.COMPLETED.value)

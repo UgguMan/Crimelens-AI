@@ -3,19 +3,25 @@ CrimeLens AI — OCR Pipeline
 ===============================
 Extracts text from uploaded evidence files using EasyOCR.
 Handles images, PDFs, and text-based files with unified output.
+Runs CPU-bound OCR in a thread pool to avoid blocking the async event loop.
 """
 
 import io
 import csv
+import asyncio
 import traceback
 from pathlib import Path
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
 
 from app.models.evidence import OCRResult, OCRTextBlock
 from app.utils.helpers import Timer
 
 # Lazy-initialized EasyOCR reader (downloads models on first use)
 _ocr_reader = None
+
+# Thread pool for CPU-bound OCR work (prevents blocking the async event loop)
+_ocr_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ocr")
 
 
 def _get_ocr_reader():
@@ -32,30 +38,59 @@ def _get_ocr_reader():
     return _ocr_reader
 
 
-def process_image(file_path: str) -> OCRResult:
+def _run_ocr_on_image(file_path: str) -> list[tuple]:
+    """
+    Run EasyOCR on an image file (blocking call, meant for thread pool).
+    Returns raw EasyOCR results.
+    """
+    reader = _get_ocr_reader()
+    # Use detail=1 without paragraph for reliable 3-element tuples
+    return reader.readtext(file_path, detail=1, paragraph=False)
+
+
+def _run_ocr_on_bytes(image_bytes: bytes) -> list[tuple]:
+    """
+    Run EasyOCR on raw image bytes (for PDF page images).
+    """
+    reader = _get_ocr_reader()
+    return reader.readtext(image_bytes, detail=1, paragraph=False)
+
+
+def process_image_sync(file_path: str) -> OCRResult:
     """
     Extract text from an image file using EasyOCR.
     Returns structured OCR result with text blocks and confidence scores.
+    This is a SYNCHRONOUS function meant to run in a thread pool.
     """
     with Timer() as timer:
-        reader = _get_ocr_reader()
-
-        # EasyOCR returns: [(bbox, text, confidence), ...]
-        raw_results = reader.readtext(file_path, detail=1, paragraph=True)
+        raw_results = _run_ocr_on_image(file_path)
 
         text_blocks = []
         full_text_parts = []
 
         for idx, detection in enumerate(raw_results):
-            bbox, text, confidence = detection
+            # EasyOCR with detail=1 returns (bbox, text, confidence)
+            # Handle both 2-element and 3-element tuples gracefully
+            if len(detection) == 3:
+                bbox, text, confidence = detection
+            elif len(detection) == 2:
+                bbox, text = detection
+                confidence = 0.5  # Default confidence
+            else:
+                continue
+
+            text_str = str(text).strip()
+            if not text_str:
+                continue
+
             block = OCRTextBlock(
-                text=text.strip(),
+                text=text_str,
                 confidence=round(float(confidence), 3),
                 bbox=[[int(coord) for coord in point] for point in bbox] if bbox else [],
                 line_number=idx + 1,
             )
             text_blocks.append(block)
-            full_text_parts.append(text.strip())
+            full_text_parts.append(text_str)
 
     return OCRResult(
         evidence_id="",  # Set by caller
@@ -66,10 +101,12 @@ def process_image(file_path: str) -> OCRResult:
     )
 
 
-def process_pdf(file_path: str) -> OCRResult:
+def process_pdf_sync(file_path: str) -> OCRResult:
     """
     Extract text from a PDF file.
-    Uses PyPDF2 for text-based PDFs, falls back to OCR for scanned pages.
+    Uses PyPDF2 for text-based PDFs. For scanned pages (no text),
+    attempts to render them as images and run OCR.
+    This is a SYNCHRONOUS function meant to run in a thread pool.
     """
     from PyPDF2 import PdfReader
 
@@ -92,9 +129,18 @@ def process_pdf(file_path: str) -> OCRResult:
                     line_number=line_counter,
                 ))
             else:
-                # Scanned page — attempt OCR if page has images
-                # For simplicity, we note that this page needs OCR
-                all_text_parts.append(f"[Page {page_num + 1}] (scanned — OCR may be limited)")
+                # Scanned page — try to extract images and OCR them
+                ocr_text = _ocr_pdf_page_images(page, page_num)
+                if ocr_text:
+                    all_text_parts.append(f"[Page {page_num + 1}]\n{ocr_text}")
+                    line_counter += 1
+                    text_blocks.append(OCRTextBlock(
+                        text=ocr_text,
+                        confidence=0.7,
+                        line_number=line_counter,
+                    ))
+                else:
+                    all_text_parts.append(f"[Page {page_num + 1}] (scanned — no text extracted)")
 
     return OCRResult(
         evidence_id="",
@@ -105,7 +151,32 @@ def process_pdf(file_path: str) -> OCRResult:
     )
 
 
-def process_text_file(file_path: str) -> OCRResult:
+def _ocr_pdf_page_images(page, page_num: int) -> str:
+    """Try to extract images from a PDF page and OCR them."""
+    try:
+        if not hasattr(page, 'images') or not page.images:
+            return ""
+
+        all_text = []
+        for img_idx, image in enumerate(page.images):
+            try:
+                image_bytes = image.data
+                if image_bytes and len(image_bytes) > 100:  # Skip tiny images
+                    results = _run_ocr_on_bytes(image_bytes)
+                    for detection in results:
+                        if len(detection) >= 2:
+                            text = str(detection[1]).strip()
+                            if text:
+                                all_text.append(text)
+            except Exception:
+                continue
+
+        return "\n".join(all_text) if all_text else ""
+    except Exception:
+        return ""
+
+
+def process_text_file_sync(file_path: str) -> OCRResult:
     """Read plain text files directly."""
     with Timer() as timer:
         path = Path(file_path)
@@ -123,7 +194,7 @@ def process_text_file(file_path: str) -> OCRResult:
     )
 
 
-def process_csv_file(file_path: str) -> OCRResult:
+def process_csv_file_sync(file_path: str) -> OCRResult:
     """Parse CSV files into structured text."""
     with Timer() as timer:
         path = Path(file_path)
@@ -161,22 +232,22 @@ def process_csv_file(file_path: str) -> OCRResult:
     )
 
 
-def process_evidence(file_path: str, file_type: str, evidence_id: str) -> OCRResult:
+def _process_evidence_sync(file_path: str, file_type: str, evidence_id: str) -> OCRResult:
     """
-    Route evidence to the appropriate processor based on file type.
-    This is the main entry point for the OCR pipeline.
+    Synchronous evidence processing (runs in thread pool).
+    Routes evidence to the appropriate processor based on file type.
     """
     try:
         if file_type == "image":
-            result = process_image(file_path)
+            result = process_image_sync(file_path)
         elif file_type == "pdf":
-            result = process_pdf(file_path)
+            result = process_pdf_sync(file_path)
         elif file_type == "csv":
-            result = process_csv_file(file_path)
+            result = process_csv_file_sync(file_path)
         elif file_type in ("text", "email", "document"):
-            result = process_text_file(file_path)
+            result = process_text_file_sync(file_path)
         else:
-            result = process_text_file(file_path)
+            result = process_text_file_sync(file_path)
 
         result.evidence_id = evidence_id
         return result
@@ -188,3 +259,18 @@ def process_evidence(file_path: str, file_type: str, evidence_id: str) -> OCRRes
             full_text=f"[OCR Error] Failed to process file: {str(e)}",
             processing_time_ms=0,
         )
+
+
+async def process_evidence(file_path: str, file_type: str, evidence_id: str) -> OCRResult:
+    """
+    Async entry point for the OCR pipeline.
+    Runs CPU-bound OCR work in a thread pool to avoid blocking the event loop.
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        _ocr_executor,
+        _process_evidence_sync,
+        file_path,
+        file_type,
+        evidence_id,
+    )
