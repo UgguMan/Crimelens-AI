@@ -22,7 +22,7 @@ google-auth>=2.29.0,<3.0.0
 requests>=2.31.0,<3.0.0
 
 # --- OCR Engine ---
-easyocr>=1.7.1,<2.0.0
+# EasyOCR removed to save memory on 512MB RAM free tier (using Gemini 2.0 Flash Vision API instead)
 
 # --- AI / LLM ---
 google-generativeai>=0.8.0

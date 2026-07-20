@@ -1,112 +1,112 @@
 """
 CrimeLens AI — OCR Pipeline
 ===============================
-Extracts text from uploaded evidence files using EasyOCR.
+Extracts text from uploaded evidence files using Google Gemini Vision API.
+This approach uses ZERO server memory for OCR (unlike EasyOCR which needs ~400MB).
 Handles images, PDFs, and text-based files with unified output.
-Runs CPU-bound OCR in a thread pool to avoid blocking the async event loop.
 """
 
 import io
 import csv
-import asyncio
+import base64
+import json
 import traceback
 from pathlib import Path
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor
 
+from app.config import get_settings
 from app.models.evidence import OCRResult, OCRTextBlock
 from app.utils.helpers import Timer
 
-# Lazy-initialized EasyOCR reader (downloads models on first use)
-_ocr_reader = None
 
-# Thread pool for CPU-bound OCR work (prevents blocking the async event loop)
-_ocr_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ocr")
+def _get_gemini_vision_model():
+    """Get a Gemini model configured for OCR/vision tasks."""
+    import google.generativeai as genai
+
+    settings = get_settings()
+    if not settings.gemini_api_key:
+        raise RuntimeError("GEMINI_API_KEY is not configured.")
+
+    genai.configure(api_key=settings.gemini_api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-2.0-flash",
+        generation_config={
+            "temperature": 0.1,
+            "max_output_tokens": 8192,
+        },
+    )
+    return model
 
 
-def _get_ocr_reader():
-    """Lazy singleton for EasyOCR reader to avoid loading models on import."""
-    global _ocr_reader
-    if _ocr_reader is None:
-        import easyocr
-        _ocr_reader = easyocr.Reader(
-            ["en"],
-            gpu=False,  # Set to True if CUDA GPU is available
-            verbose=False,
-        )
-        print("[CrimeLens] EasyOCR reader initialized.")
-    return _ocr_reader
+OCR_VISION_PROMPT = """You are a precise OCR engine. Extract ALL text from this image exactly as it appears.
+
+RULES:
+1. Extract every single piece of text visible in the image
+2. Preserve the original layout, line breaks, and formatting as much as possible
+3. If this is a chat/messaging screenshot, format as: [timestamp] Sender: Message
+4. If this is a document, preserve headings, paragraphs, and structure
+5. Include ALL numbers, dates, phone numbers, emails, URLs, and special characters
+6. Do NOT summarize or interpret — extract text EXACTLY as shown
+7. If text is partially visible or blurry, extract what you can and mark unclear parts with [unclear]
+8. Return ONLY the extracted text, nothing else — no explanations or commentary"""
 
 
-def _run_ocr_on_image(file_path: str) -> list[tuple]:
+def process_image_with_gemini(file_path: str) -> OCRResult:
     """
-    Run EasyOCR on an image file (blocking call, meant for thread pool).
-    Returns raw EasyOCR results.
-    """
-    reader = _get_ocr_reader()
-    # Use detail=1 without paragraph for reliable 3-element tuples
-    return reader.readtext(file_path, detail=1, paragraph=False)
-
-
-def _run_ocr_on_bytes(image_bytes: bytes) -> list[tuple]:
-    """
-    Run EasyOCR on raw image bytes (for PDF page images).
-    """
-    reader = _get_ocr_reader()
-    return reader.readtext(image_bytes, detail=1, paragraph=False)
-
-
-def process_image_sync(file_path: str) -> OCRResult:
-    """
-    Extract text from an image file using EasyOCR.
-    Returns structured OCR result with text blocks and confidence scores.
-    This is a SYNCHRONOUS function meant to run in a thread pool.
+    Extract text from an image using Gemini Vision API.
+    Zero server memory overhead — all processing happens via API.
     """
     with Timer() as timer:
-        raw_results = _run_ocr_on_image(file_path)
+        model = _get_gemini_vision_model()
 
-        text_blocks = []
-        full_text_parts = []
+        # Read and encode the image
+        image_path = Path(file_path)
+        image_bytes = image_path.read_bytes()
 
-        for idx, detection in enumerate(raw_results):
-            # EasyOCR with detail=1 returns (bbox, text, confidence)
-            # Handle both 2-element and 3-element tuples gracefully
-            if len(detection) == 3:
-                bbox, text, confidence = detection
-            elif len(detection) == 2:
-                bbox, text = detection
-                confidence = 0.5  # Default confidence
-            else:
-                continue
+        # Determine MIME type
+        suffix = image_path.suffix.lower()
+        mime_map = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".png": "image/png", ".gif": "image/gif",
+            ".webp": "image/webp", ".bmp": "image/bmp",
+            ".tiff": "image/tiff", ".tif": "image/tiff",
+        }
+        mime_type = mime_map.get(suffix, "image/jpeg")
 
-            text_str = str(text).strip()
-            if not text_str:
-                continue
+        # Send to Gemini Vision
+        import google.generativeai as genai
+        image_part = {
+            "mime_type": mime_type,
+            "data": image_bytes,
+        }
 
-            block = OCRTextBlock(
-                text=text_str,
-                confidence=round(float(confidence), 3),
-                bbox=[[int(coord) for coord in point] for point in bbox] if bbox else [],
-                line_number=idx + 1,
-            )
-            text_blocks.append(block)
-            full_text_parts.append(text_str)
+        response = model.generate_content([OCR_VISION_PROMPT, image_part])
+        extracted_text = response.text.strip()
+
+    text_blocks = []
+    if extracted_text:
+        lines = extracted_text.split("\n")
+        for idx, line in enumerate(lines):
+            if line.strip():
+                text_blocks.append(OCRTextBlock(
+                    text=line.strip(),
+                    confidence=0.95,
+                    line_number=idx + 1,
+                ))
 
     return OCRResult(
-        evidence_id="",  # Set by caller
-        full_text="\n".join(full_text_parts),
+        evidence_id="",
+        full_text=extracted_text,
         text_blocks=text_blocks,
         language="en",
         processing_time_ms=timer.elapsed_ms,
     )
 
 
-def process_pdf_sync(file_path: str) -> OCRResult:
+def process_pdf(file_path: str) -> OCRResult:
     """
     Extract text from a PDF file.
-    Uses PyPDF2 for text-based PDFs. For scanned pages (no text),
-    attempts to render them as images and run OCR.
-    This is a SYNCHRONOUS function meant to run in a thread pool.
+    Uses PyPDF2 for text-based PDFs, falls back to Gemini Vision for scanned pages.
     """
     from PyPDF2 import PdfReader
 
@@ -129,18 +129,18 @@ def process_pdf_sync(file_path: str) -> OCRResult:
                     line_number=line_counter,
                 ))
             else:
-                # Scanned page — try to extract images and OCR them
+                # Scanned page — try to extract images and OCR via Gemini
                 ocr_text = _ocr_pdf_page_images(page, page_num)
                 if ocr_text:
                     all_text_parts.append(f"[Page {page_num + 1}]\n{ocr_text}")
                     line_counter += 1
                     text_blocks.append(OCRTextBlock(
                         text=ocr_text,
-                        confidence=0.7,
+                        confidence=0.85,
                         line_number=line_counter,
                     ))
                 else:
-                    all_text_parts.append(f"[Page {page_num + 1}] (scanned — no text extracted)")
+                    all_text_parts.append(f"[Page {page_num + 1}] (scanned — no extractable text)")
 
     return OCRResult(
         evidence_id="",
@@ -152,22 +152,27 @@ def process_pdf_sync(file_path: str) -> OCRResult:
 
 
 def _ocr_pdf_page_images(page, page_num: int) -> str:
-    """Try to extract images from a PDF page and OCR them."""
+    """Try to extract images from a PDF page and OCR them via Gemini."""
     try:
         if not hasattr(page, 'images') or not page.images:
             return ""
 
         all_text = []
+        model = _get_gemini_vision_model()
+
         for img_idx, image in enumerate(page.images):
             try:
                 image_bytes = image.data
-                if image_bytes and len(image_bytes) > 100:  # Skip tiny images
-                    results = _run_ocr_on_bytes(image_bytes)
-                    for detection in results:
-                        if len(detection) >= 2:
-                            text = str(detection[1]).strip()
-                            if text:
-                                all_text.append(text)
+                if image_bytes and len(image_bytes) > 500:
+                    import google.generativeai as genai
+                    image_part = {
+                        "mime_type": "image/png",
+                        "data": image_bytes,
+                    }
+                    response = model.generate_content([OCR_VISION_PROMPT, image_part])
+                    text = response.text.strip()
+                    if text:
+                        all_text.append(text)
             except Exception:
                 continue
 
@@ -176,7 +181,7 @@ def _ocr_pdf_page_images(page, page_num: int) -> str:
         return ""
 
 
-def process_text_file_sync(file_path: str) -> OCRResult:
+def process_text_file(file_path: str) -> OCRResult:
     """Read plain text files directly."""
     with Timer() as timer:
         path = Path(file_path)
@@ -194,7 +199,7 @@ def process_text_file_sync(file_path: str) -> OCRResult:
     )
 
 
-def process_csv_file_sync(file_path: str) -> OCRResult:
+def process_csv_file(file_path: str) -> OCRResult:
     """Parse CSV files into structured text."""
     with Timer() as timer:
         path = Path(file_path)
@@ -203,7 +208,6 @@ def process_csv_file_sync(file_path: str) -> OCRResult:
         except UnicodeDecodeError:
             raw_text = path.read_text(encoding="latin-1")
 
-        # Parse CSV and format as readable text
         text_lines = []
         csv_reader = csv.reader(io.StringIO(raw_text))
         headers = None
@@ -232,45 +236,36 @@ def process_csv_file_sync(file_path: str) -> OCRResult:
     )
 
 
-def _process_evidence_sync(file_path: str, file_type: str, evidence_id: str) -> OCRResult:
-    """
-    Synchronous evidence processing (runs in thread pool).
-    Routes evidence to the appropriate processor based on file type.
-    """
-    try:
-        if file_type == "image":
-            result = process_image_sync(file_path)
-        elif file_type == "pdf":
-            result = process_pdf_sync(file_path)
-        elif file_type == "csv":
-            result = process_csv_file_sync(file_path)
-        elif file_type in ("text", "email", "document"):
-            result = process_text_file_sync(file_path)
-        else:
-            result = process_text_file_sync(file_path)
-
-        result.evidence_id = evidence_id
-        return result
-
-    except Exception as e:
-        print(f"[CrimeLens] OCR Error for {evidence_id}: {traceback.format_exc()}")
-        return OCRResult(
-            evidence_id=evidence_id,
-            full_text=f"[OCR Error] Failed to process file: {str(e)}",
-            processing_time_ms=0,
-        )
-
-
 async def process_evidence(file_path: str, file_type: str, evidence_id: str) -> OCRResult:
     """
-    Async entry point for the OCR pipeline.
-    Runs CPU-bound OCR work in a thread pool to avoid blocking the event loop.
+    Route evidence to the appropriate processor based on file type.
+    This is the main entry point for the OCR pipeline.
+    Uses asyncio.to_thread to avoid blocking the event loop.
     """
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        _ocr_executor,
-        _process_evidence_sync,
-        file_path,
-        file_type,
-        evidence_id,
-    )
+    import asyncio
+
+    def _process_sync():
+        try:
+            if file_type == "image":
+                result = process_image_with_gemini(file_path)
+            elif file_type == "pdf":
+                result = process_pdf(file_path)
+            elif file_type == "csv":
+                result = process_csv_file(file_path)
+            elif file_type in ("text", "email", "document"):
+                result = process_text_file(file_path)
+            else:
+                result = process_text_file(file_path)
+
+            result.evidence_id = evidence_id
+            return result
+
+        except Exception as e:
+            print(f"[CrimeLens] OCR Error for {evidence_id}: {traceback.format_exc()}")
+            return OCRResult(
+                evidence_id=evidence_id,
+                full_text=f"[OCR Error] Failed to process file: {str(e)}",
+                processing_time_ms=0,
+            )
+
+    return await asyncio.to_thread(_process_sync)
